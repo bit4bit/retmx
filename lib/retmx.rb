@@ -1,6 +1,6 @@
 #Libreria para leer archivo TMX de mapeditor.org
 #Author:: Jovany Leandro G.C (mailto: bit4bit@riseup.net)
-#Copyright:: Copyright (c) 2011 Jovany Leandro G.C
+#Copyright:: Copyright (c) 2013 Jovany Leandro G.C
 #License:: GPLv3 or any later version
 #date: 2011-12-10
 #last-update: 2013-10-12
@@ -36,8 +36,6 @@ module RETMX
   #Wraps any number of custom properties. Can be used as a child of the map, tile (when part of a tileset), layer, objectgroup and object elements.
   class Properties
     include Enumerable
-
-    attr_reader :xml
 
 
     def initialize(xml)
@@ -81,6 +79,9 @@ module RETMX
     #The height of a tile.
     attr_reader :tileheight
 
+    #The background color of the map. (since 0.9.0)
+    attr_reader :backgroundcolor
+    
     #Layers on map
     attr_reader :layers
     
@@ -90,6 +91,9 @@ module RETMX
     #Objects groups on map
     attr_reader :objectgroups
 
+    #ImageLayers
+    attr_reader :imagelayers
+    
     #Properties on map
     attr_reader :property
 
@@ -103,17 +107,18 @@ module RETMX
       raise RuntimeError, "Need a .tmx" unless File.exists? file
       doc = REXML::Document.new(File.new(file)).root
       
-      
       @file = file
-      @version = doc.attributes['version']
+      @version = doc.attributes['version'].to_f
       @orientation = doc.attributes['orientation']
       @width = doc.attributes['width'].to_i
       @height = doc.attributes['height'].to_i
       @tilewidth = doc.attributes['tilewidth'].to_i
       @tileheight = doc.attributes['tileheight'].to_i
+      @backgroundcolor = doc.attributes['backgroundcolor']
       @tilesets = {}
       @layers = {}
       @objectgroups = {}
+      @imagelayers = {}
       @xml = doc
 
       build(doc)
@@ -127,6 +132,9 @@ module RETMX
       @tilesets.sort_by { |k,v| k} #sort asc
       doc.elements.each("layer") { |e|
         @layers[e.attributes['name']] = Layer.new(self, e)
+      }
+      doc.elements.each("imagelayer") { |e|
+        @imagelayers[e.attributes['name']] = ImageLayer.new(self, e)
       }
       doc.elements.each("objectgroup") { |e|
         @objectgroups[e.attributes['name']] = ObjectGroup.new(self, e)
@@ -161,26 +169,24 @@ module RETMX
         @y = xml.attributes['y'].to_i
         @width = xml.attributes['width'].to_i
         @height = xml.attributes['height'].to_i
-        @opacity = xml.attributes['opacity'].to_f
-        unless xml.attributes['visible'].nil?
-            @visible = xml.attributes['visible'].to_i
-        else
-          @visible = 1
-        end
+        @opacity = xml.attributes['opacity'].nil? ? 1.0 : xml.attributes['opacity'].to_f
+        @visible = xml.attributes['visible'].nil? ? 1 : xml.attributes['visible'].to_i
         
-        @objects = []
+        @objects = {}
         build(xml)
       end
 
 
-      def each
-        @objects.each { |i| yield i}
+      def each(type = nil)
+        return @objects[type].each { |i| yield i}  unless type.nil?
+        return @objects.each { |i| yield i}
       end
       
       private
       def build(xml)
         xml.elements.each('object') {|e|
-          @objects << Object.new(self, e)
+          @objects[e.attributes['type']] ||= []
+          @objects[e.attributes['type']] << Object.new(self, e)
         }
       end
 
@@ -223,6 +229,9 @@ When the object has a gid set, then it is represented by the image of the tile w
         #Whether the object is shown (1) or hidden (0). Defaults to 1.
         attr_reader :visible
 
+        #Points only for polygon, polyline
+        attr_reader :points
+        
         def initialize(og, e)
           @objectgroup = og
           @name = e.attributes['name']
@@ -233,16 +242,58 @@ When the object has a gid set, then it is represented by the image of the tile w
           @height = e.attributes['height'].to_i
           @gid = e.attributes['gid'].nil? ? nil : e.attributes['gid'].to_i
           @rotation = e.attributes['rotation'].to_i
-          unless e.attributes['visible'].nil?
-            @visible = e.attributes['visible'].to_i
-          else
-            @visible = 1
-          end
+          @visible = e.attributes['visible'].nil? ? 1 : e.attributes['visible'].to_i
           
           @property = Properties.new(e)
+          @points = []
+          obj =  e.elements[@type]
+          @points = obj.attributes['points'].to_s.split(',').map{|v| v.to_i} if obj
+
         end
       end
     end
+
+    class ImageLayer
+      #The name of the image layer
+      attr_reader :name
+     
+      #The width of the image layer in tiles. Meaningless.
+      attr_reader :width
+
+      #The height of the image layer in tiles. Meaningless.
+      attr_reader :height
+      
+      #The opacity of the layer as a value from 0 to 1. Defaults to 1.
+      attr_reader :opacity
+
+      #Whether the layer is shown (1) or hidden (0). Defaults to 1.
+      attr_reader :visible
+
+      #Properties
+      attr_reader :property
+      
+      #Imagen
+      attr_reader :image
+      
+      #Map Belongs
+      attr_reader :map
+      def initialize(map, xml)
+        @map = map
+        @name = xml.attributes['name']
+        @width = xml.attributes['width'].to_i
+        @height = xml.attributes['height'].to_i
+
+        @opacity = 1
+        @opacity = xml.attributes['opacity'].to_f  unless xml.attributes['opacity'].nil?
+        
+        @visible = 1
+        @visible = xml.attributes['visible'].to_i unless xml.attributes['visible'].nil?
+        @image = Image.new(xml)
+        @property = Properties.new(xml)
+      end
+      
+    end
+    
 
     class Layer
       #The name of the layer.
@@ -275,8 +326,6 @@ When the object has a gid set, then it is represented by the image of the tile w
       #Properties 
       attr_reader :property
 
-      #REXML internal
-      attr_reader :xml
       def initialize(map, xml)
         @map = map
         @name = xml.attributes['name']
@@ -294,15 +343,16 @@ When the object has a gid set, then it is represented by the image of the tile w
       
       #This function is used for render the layer
       def render(&block) #:yields: block_y, block_x, tileset, index
-        
+        srect = Struct.new(:x, :y, :w, :h)
         @height.times {|by| #block row
           @width.times {|bx| #block col 
             cell = @data[(by * @width) + bx ]
+            
             @map.tilesets.reverse_each {|k, t|
               if t.firstgid <= cell.gid
                 cell = cell.clone
                 cell.gid -= t.firstgid
-                block.call(self, bx, by, t, cell)
+                block.call(self, bx, by, t, cell.rect)
                 break
               end
             }
@@ -320,13 +370,41 @@ When the object has a gid set, then it is represented by the image of the tile w
         h.times {|by|
           w.times {|bx|
             
-            cell = @data[((by + y )  * w) + (bx + x)]
+            cell = @data[((by + y )  * @width) + (bx + x + @height)]
+            @map.tilesets.reverse_each {|k, t|
+
+              if t.firstgid <= cell.gid
+                cell = cell.clone
+                cell.gid -= t.firstgid
+                block.call(self, bx, by, t, cell.rect)
+                break
+              end
+            }
+          }
+        }
+      end
+      
+        
+      #This function render partial of layer using pixel
+      #:x: offset in pixel
+      #:y: offset in pixel
+      #:w: in pixel
+      #:h: in pixel
+      def render_partial_pixel(px, py, pw, ph, &block)
+        cols = pw / map.tilewidth
+        rows = ph / map.tileheight
+        rows += 1; cols += 1
+        y = py / map.tileheight
+        x = px / map.tilewidth
+        rows.times {|by|
+          cols.times {|bx|
+            cell = @data[((by + y )  * @width) + (bx + x + @height)]
             @map.tilesets.each {|k, t|
 
               if t.firstgid <= cell.gid
                 cell = cell.clone
                 cell.gid -= t.firstgid
-                block.call(self, bx, by, t, cell)
+                block.call(self, bx, by, t, cell.rect)
                 break
               end
             }
@@ -431,12 +509,30 @@ When the object has a gid set, then it is represented by the image of the tile w
         #Extract array of gids from array of ints
         def get_data
           tile_index = 0
-          gi = Struct.new(:gid, :flags)
+          srect = Struct.new(:x, :y, :w, :h)
+          gi = Struct.new(:gid, :flags, :rect)
           @layer.height.times {|y|
             @layer.width.times {|x|
               next_gid = @raw[tile_index]
               gid, flags = decode_gid(next_gid)
-              @data[tile_index] = gi.new(gid, flags)
+            
+              rect = nil
+              @layer.map.tilesets.reverse_each {|k, t|
+                if t.firstgid <= gid
+                  cell_gid = gid - t.firstgid
+                  cols = t.image.width / t.tilewidth
+                  rect = srect.new(
+                                     t.margin + (t.tilewidth + t.spacing) * (cell_gid % cols.to_i),
+                                     t.margin + (t.tileheight + t.spacing) * (cell_gid / cols.to_i),
+                                     t.tilewidth,
+                                     t.tileheight
+                                     )
+
+                  break
+                end
+              }
+
+              @data[tile_index] = gi.new(gid, flags, rect)
               tile_index += 1             
             }
           }
@@ -477,6 +573,8 @@ When the object has a gid set, then it is represented by the image of the tile w
 
       #Map belongs
       attr_reader :map
+
+      attr_reader :tiles
       def initialize(map, xml)
         @map = map
         @firstgid = xml.attributes['firstgid'].to_i
@@ -488,8 +586,9 @@ When the object has a gid set, then it is represented by the image of the tile w
         @margin = xml.attributes['margin'].nil? ? 0 : xml.attributes['margin'].to_i
 
         @image = nil
-        #array of Recs that know how cut a image
-        @tiles = []
+        #array of Rects that know how cut a image
+        @tiles = {}
+
         build(xml)
 
       end
@@ -497,12 +596,15 @@ When the object has a gid set, then it is represented by the image of the tile w
       
       #Get tile at index +i+
       def at(i)
-        return @tiles[i.gid] if i.respond_to? :gid
-        return @tiles[i]
+        return @tiles[i] if @tiles.has_key?(i)
       end
 
+      def [](i)
+        return @tiles[i] if @tiles.has_key?(i)
+      end
+      
       def each
-        @tiles.each{|tile| yield tile}
+        @tiles.each{|id, tile| yield tile}
       end
       
       private
@@ -510,20 +612,10 @@ When the object has a gid set, then it is represented by the image of the tile w
         @image = Image.new(xml)
         @property = Properties.new(xml)
 
+        xml.elements.each('tile') do |e|
+          @tiles[e.attributes['id'].to_i] = Tile.new(e)
+        end
         
-
-        #Rect: x, y, w, h
-        srect = Struct.new(:x, :y, :w, :h)
-        stop_width = @image.width - @tilewidth
-        stop_height = @image.height - @tileheight
-        tile_num = 0
-        #calculate how cut image
-        @margin.step(stop_height, @tileheight + @spacing) {|y| 
-          @margin.step(stop_width, @tilewidth + @spacing) {|x| 
-            @tiles[tile_num] = Tile.new(xml, tile_num, x, y, @tilewidth, @tileheight)
-            tile_num += 1
-          }
-        }
       end
 
       class Tile
@@ -533,52 +625,34 @@ When the object has a gid set, then it is represented by the image of the tile w
         #propierties for tile
         attr_reader :property
 
-        #how cut from image tileset
-        attr_reader :x, :y, :w, :h
+        #@todo terrain how work?
 
-        def initialize(xml, tile_num, x, y, w, h)
-          @property = {}
-          xml.elements.each('tile') do |e|
-            if e.attributes['id'].to_i == tile_num.to_i
-              @property = Properties.new(e)
-              break
-            end
-          end
-
-          @id = tile_num
-          @x = x
-          @y = y
-          @w = w
-          @h = h
-        end
-      end
-
-      class Image
-        #The reference to the tileset image file (Tiled supports most common image formats).
-        attr_reader :source
-        
-        #Defines a specific color that is treated as transparent (example value: "FF00FF" for magenta).
-        attr_reader :trans
-
-        #Width of image
-        attr_reader :width
-        
-        #Height of image
-        attr_reader :height
-
-        def initialize(xml)
-          doc = xml.elements['image']
-          @source = doc.attributes['source']
-          @trans = doc.attributes['trans']
-          @width = doc.attributes['width'].to_i
-          @height = doc.attributes['height'].to_i
+        def initialize(e)
+          @property = Properties.new(e)
+          @id = e.attributes['id'].to_i
         end
       end
     end
+    class Image
+      #The reference to the tileset image file (Tiled supports most common image formats).
+      attr_reader :source
+      
+      #Defines a specific color that is treated as transparent (example value: "FF00FF" for magenta).
+      attr_reader :trans
+      
+      #Width of image
+      attr_reader :width
+      
+      #Height of image
+      attr_reader :height
+      
+      def initialize(xml)
+        doc = xml.elements['image']
+        @source = doc.attributes['source']
+        @trans = doc.attributes['trans']
+        @width = doc.attributes['width'].to_i
+        @height = doc.attributes['height'].to_i
+      end
+    end
   end
-end
-
-
-if $0 == __FILE__
-  RETMX.load('test.tmx')
 end

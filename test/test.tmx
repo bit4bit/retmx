@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.0" orientation="orthogonal" width="10" height="20" tilewidth="32" tileheight="32" backgroundcolor="#aaff00">
+ <tileset firstgid="1" name="patron_juego" tilewidth="32" tileheight="32">
+  <properties>
+   <property name="patron" value="juego"/>
+  </properties>
+  <image source="patron_juego.png" width="129" height="32"/>
+  <terraintypes>
+   <terrain name="terreno_azul" tile="-1"/>
+   <terrain name="terreno_red" tile="-1"/>
+  </terraintypes>
+  <tile id="1" terrain="0,0,0,0">
+   <properties>
+    <property name="color" value="azul"/>
+   </properties>
+  </tile>
+  <tile id="2" terrain="1,1,1,1">
+   <properties>
+    <property name="color" value="rojo"/>
+   </properties>
+  </tile>
+  <tile id="3">
+   <properties>
+    <property name="color" value="verde"/>
+   </properties>
+  </tile>
+ </tileset>
+ <layer name="layer_test" width="10" height="20">
+  <properties>
+   <property name="description" value="layer test"/>
+  </properties>
+  <data encoding="base64" compression="zlib">
+   eJxjYmBgYCaAmXBgfHKDQR0hM6jlR1qFGTHmEYtZ0DA+dcSah88OQvYS6wZ0deSYRwkGANVqAdY=
+  </data>
+ </layer>
+ <imagelayer name="image_test" width="10" height="20">
+  <image source="patron_juego.png"/>
+  <properties>
+   <property name="test" value="test"/>
+  </properties>
+ </imagelayer>
+ <objectgroup name="object_test" width="10" height="20">
+  <object name="rectangle" type="rectangle" x="98" y="2" width="127" height="61">
+   <properties>
+    <property name="color" value="red"/>
+   </properties>
+  </object>
+  <object name="ellipse" type="ellipse" x="90" y="110" width="180" height="98">
+   <properties>
+    <property name="color" value="blue"/>
+   </properties>
+   <ellipse/>
+  </object>
+  <object name="polygon" type="polygon" x="91" y="283">
+   <properties>
+    <property name="color" value="gray"/>
+   </properties>
+   <polygon points="0,0 165,41 -19,137 -73,31 -7,-54"/>
+  </object>
+  <object name="polyline" type="polyline" x="239" y="401">
+   <properties>
+    <property name="color" value="green"/>
+   </properties>
+   <polyline points="0,0 -132,106 66,170 40,40"/>
+  </object>
+  <object name="image" type="imagen" gid="2" x="259" y="35"/>
+ </objectgroup>
+</map>
