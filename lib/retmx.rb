@@ -106,7 +106,7 @@ module RETMX
 
       raise RuntimeError, "Need a .tmx" unless File.exists? file
       doc = REXML::Document.new(File.new(file)).root
-      
+      doc.context['base_path'] = File.dirname(file)
       @file = file
       @version = doc.attributes['version'].to_f
       @orientation = doc.attributes['orientation']
@@ -245,11 +245,24 @@ When the object has a gid set, then it is represented by the image of the tile w
           @visible = e.attributes['visible'].nil? ? 1 : e.attributes['visible'].to_i
           
           @property = Properties.new(e)
-          @points = []
-          obj =  e.elements[@type]
-          @points = obj.attributes['points'].to_s.split(',').map{|v| v.to_i} if obj
-
+          @points ||= get_points(e, 'polyline')
+          @points ||= get_points(e, 'polygon')
         end
+
+        private 
+        def get_points(e, type)
+          points = []
+          e.elements.each(type){|pe|
+            x1 = x2 = y1 = y2 = 0
+            pe.attributes['points'].split(' ').each {|pair|
+              x, y = pair.split(',').map{|v| v.to_i}
+              points << [@x + x, @y + y]
+            }
+          }
+          return points if points.size > 0
+          return nil
+        end
+      
       end
     end
 
@@ -352,7 +365,7 @@ When the object has a gid set, then it is represented by the image of the tile w
               if t.firstgid <= cell.gid
                 cell = cell.clone
                 cell.gid -= t.firstgid
-                block.call(self, bx, by, t, cell.rect)
+                block.call(self, bx, by, t, cell)
                 break
               end
             }
@@ -376,7 +389,7 @@ When the object has a gid set, then it is represented by the image of the tile w
               if t.firstgid <= cell.gid
                 cell = cell.clone
                 cell.gid -= t.firstgid
-                block.call(self, bx, by, t, cell.rect)
+                block.call(self, bx, by, t, cell)
                 break
               end
             }
@@ -404,7 +417,7 @@ When the object has a gid set, then it is represented by the image of the tile w
               if t.firstgid <= cell.gid
                 cell = cell.clone
                 cell.gid -= t.firstgid
-                block.call(self, bx, by, t, cell.rect)
+                block.call(self, bx, by, t, cell)
                 break
               end
             }
@@ -579,6 +592,11 @@ When the object has a gid set, then it is represented by the image of the tile w
         @map = map
         @firstgid = xml.attributes['firstgid'].to_i
         @source = xml.attributes['source']
+        
+        unless @source.nil?
+          xml = REXML::Document.new(File.new(File.join(xml.context['base_path'], @source))).root
+        end
+
         @name = xml.attributes['name']
         @tilewidth = xml.attributes['tilewidth'].to_i
         @tileheight = xml.attributes['tileheight'].to_i
@@ -588,7 +606,6 @@ When the object has a gid set, then it is represented by the image of the tile w
         @image = nil
         #array of Rects that know how cut a image
         @tiles = {}
-
         build(xml)
 
       end
@@ -609,9 +626,9 @@ When the object has a gid set, then it is represented by the image of the tile w
       
       private
       def build(xml)
-        @image = Image.new(xml)
+        @image = Image.new(xml, File.dirname(@source.to_s))
         @property = Properties.new(xml)
-
+        
         xml.elements.each('tile') do |e|
           @tiles[e.attributes['id'].to_i] = Tile.new(e)
         end
@@ -646,10 +663,10 @@ When the object has a gid set, then it is represented by the image of the tile w
       #Height of image
       attr_reader :height
       
-      def initialize(xml)
+      def initialize(xml, base_path = "")
         doc = xml.elements['image']
-        @source = doc.attributes['source']
-        @trans = doc.attributes['trans']
+        @source = File.join(base_path, doc.attributes['source'].to_s)
+        @trans = doc.attributes['trans'].to_s
         @width = doc.attributes['width'].to_i
         @height = doc.attributes['height'].to_i
       end

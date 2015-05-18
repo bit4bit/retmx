@@ -1,5 +1,5 @@
 Gem::Specification.new do |s|
-  s.name = 'RETMX'
+  s.name = 'retmx'
   s.version = '1.0.0'
   s.date = '2013-10-13'
   s.summary = 'Ruby Reader TMX Map Format'
